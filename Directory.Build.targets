@@ -2,8 +2,8 @@
   <!-- Paths -->
   <PropertyGroup>
     <SPTPath Condition=" '$(SPTPath)' == '' ">$(SolutionDir)..\..\</SPTPath>
-    <FikaHeadPath Condition=" '$(FikaHeadPath)' == '' ">$(SolutionDir)..\..\..\SPTarkov.4.1-Fika-Headless\</FikaHeadPath>
-    <FikaClientPath Condition=" '$(FikaClientPath)' == '' ">$(SolutionDir)..\..\..\SPTarkov.4.1-Fika-Client\</FikaClientPath>
+    <FikaHeadPath Condition=" '$(FikaHeadPath)' == '' ">$(SolutionDir)..\..\..\SPTarkov.5.0-Fika-Headless\</FikaHeadPath>
+    <FikaClientPath Condition=" '$(FikaClientPath)' == '' ">$(SolutionDir)..\..\..\SPTarkov.5.0-Fika-Client\</FikaClientPath>
   </PropertyGroup>
 
   <!-- To SPT Dir -->

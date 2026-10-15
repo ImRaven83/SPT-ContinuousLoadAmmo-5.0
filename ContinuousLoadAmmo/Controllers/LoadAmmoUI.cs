@@ -1,9 +1,8 @@
 ﻿using System;
-using System.Threading;
 using ContinuousLoadAmmo.Utils;
 using EFT.InventoryLogic;
 using EFT.UI.DragAndDrop;
-using HarmonyLib;
+using Il2CppInterop.Runtime;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -18,8 +17,12 @@ public class LoadAmmoUI
     private ItemViewLoadAmmoComponent _itemViewLoadAmmoComponent;
     private Image _magImage;
     private ItemIcon _itemIcon;
-    private Action _imageSubscription;
+    private Il2CppSystem.Action _imageSubscription;
     private TextMeshProUGUI _magValue;
+
+    // IL2CPP event handlers, kept so the same instances can be removed again
+    private Il2CppSystem.Action<int> _ammoCountChangedHandler;
+    private Il2CppSystem.Action _updateImageHandler;
 
     public void Initialize(Transform parent, LoadAmmoController loadAmmoController)
     {
@@ -40,22 +43,24 @@ public class LoadAmmoUI
         _loadAmmoController.OnStartLoading += HandleStart;
         _loadAmmoController.OnCloseInventoryLoading += Show;
         _loadAmmoController.OnEndLoading += Close;
-        _loadAmmoController.PlayerInventoryController.OnAmmoLoaded += UpdateTextValue;
-        _loadAmmoController.PlayerInventoryController.OnAmmoUnloaded += UpdateTextValue;
+        _ammoCountChangedHandler ??= DelegateSupport.ConvertDelegate<Il2CppSystem.Action<int>>(UpdateTextValue);
+        _loadAmmoController.PlayerInventoryController.add_OnAmmoLoaded(_ammoCountChangedHandler);
+        _loadAmmoController.PlayerInventoryController.add_OnAmmoUnloaded(_ammoCountChangedHandler);
         _loadAmmoController.OnDispose += Dispose;
     }
 
     private void PrepareGameObjects(Transform parent)
     {
-        GameObject loadAmmoObj = new(nameof(LoadAmmoUI), typeof(RectTransform));
-        _loadUITransform = loadAmmoObj.transform;
+        // The params Type[] GameObject constructor takes IL2CPP types, add the components one by one instead
+        GameObject loadAmmoObj = new(nameof(LoadAmmoUI));
+        _loadUITransform = loadAmmoObj.AddComponent<RectTransform>();
         _loadUITransform.SetParent(parent);
         CommonUtils.SetUI(_loadUITransform);
 
-        GameObject imageObj = new(nameof(Image), typeof(RectTransform), typeof(Image));
-        imageObj.transform.SetParent(_loadUITransform);
+        GameObject imageObj = new(nameof(Image));
+        imageObj.AddComponent<RectTransform>().SetParent(_loadUITransform);
         CommonUtils.SetUI(imageObj.transform, new Vector2(0f, -150f), new Vector3(0.25f, 0.25f, 0.25f));
-        _magImage = imageObj.GetComponent<Image>();
+        _magImage = imageObj.AddComponent<Image>();
         _magImage.enabled = false;
     }
 
@@ -80,7 +85,7 @@ public class LoadAmmoUI
 
     private void HandleStart(float oneAmmoDuration, int ammoTotal, int ammoDone)
     {
-        var cts = _itemViewLoadAmmoCtsField(_itemViewLoadAmmoComponent);
+        var cts = _itemViewLoadAmmoComponent._taskCancellation;
         cts?.Dispose();
         _itemViewLoadAmmoComponent.Show(oneAmmoDuration, ammoTotal, ammoDone);
     }
@@ -97,7 +102,8 @@ public class LoadAmmoUI
     {
         _imageSubscription?.Invoke();
         _itemIcon = ItemViewFactory.LoadItemIcon(item);
-        _imageSubscription = _itemIcon?.Changed.Bind(UpdateImage);
+        _updateImageHandler ??= DelegateSupport.ConvertDelegate<Il2CppSystem.Action>(UpdateImage);
+        _imageSubscription = _itemIcon?.Changed.Bind(_updateImageHandler);
     }
 
     private void UpdateImage()
@@ -120,7 +126,7 @@ public class LoadAmmoUI
     {
         if (_itemViewLoadAmmoComponent != null)
         {
-            var cts = _itemViewLoadAmmoCtsField(_itemViewLoadAmmoComponent);
+            var cts = _itemViewLoadAmmoComponent._taskCancellation;
             cts?.Cancel();
             _itemViewLoadAmmoComponent.gameObject.SetActive(false);
         }
@@ -148,12 +154,9 @@ public class LoadAmmoUI
         _loadAmmoController.OnStartLoading -= HandleStart;
         _loadAmmoController.OnCloseInventoryLoading -= Show;
         _loadAmmoController.OnEndLoading -= Close;
-        _loadAmmoController.PlayerInventoryController.OnAmmoLoaded -= UpdateTextValue;
-        _loadAmmoController.PlayerInventoryController.OnAmmoUnloaded -= UpdateTextValue;
+        _loadAmmoController.PlayerInventoryController.remove_OnAmmoLoaded(_ammoCountChangedHandler);
+        _loadAmmoController.PlayerInventoryController.remove_OnAmmoUnloaded(_ammoCountChangedHandler);
         _loadAmmoController.OnDispose -= Dispose;
         _loadAmmoController = null;
     }
-
-    private static readonly AccessTools.FieldRef<ItemViewLoadAmmoComponent, CancellationTokenSource> _itemViewLoadAmmoCtsField =
-        AccessTools.FieldRefAccess<ItemViewLoadAmmoComponent, CancellationTokenSource>("_taskCancellation");
 }

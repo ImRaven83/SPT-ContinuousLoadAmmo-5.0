@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading.Tasks;
 using Comfort.Common;
@@ -10,22 +11,32 @@ using EFT.InputSystem;
 using EFT.InventoryLogic;
 using EFT.UI;
 using EFT.UI.DragAndDrop;
+using Il2CppInterop.Runtime.Attributes;
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using UnityEngine;
 using UnityEngine.UI;
 
 namespace ContinuousLoadAmmo.Components;
 
+/// <summary>
+/// Injected into IL2CPP by <see cref="SPTushonka.Reflection.Il2Cpp.Il2CppInjection.RegisterAll"/>.
+/// Members using managed-only types are hidden from IL2CPP, they are only ever called from managed code
+/// </summary>
 public class QuickAmmoSelector : InputNode
 {
     private readonly List<GridItemView> _ammoViews = [];
     private readonly List<Ammo> _ammoItems = [];
-    private readonly HashSet<MongoID> _seenAmmoTplScratch = [];
-    private readonly EmptyItemContext _emptyItemContext = new();
+    private readonly HashSet<string> _seenAmmoTplScratch = [];
+    private EmptyItemContext _emptyItemContext;
     private LoadAmmoController _loadAmmoControllerController;
     private TaskCompletionSource<Ammo> _chosenAmmoTcs;
 
     private Transform _cancelView;
     private Image _backgroundColor;
+
+    public QuickAmmoSelector(IntPtr pointer) : base(pointer)
+    {
+    }
 
     public bool IsShown => _chosenAmmoTcs is not null;
 
@@ -43,22 +54,19 @@ public class QuickAmmoSelector : InputNode
         }
     }
 
+    [HideFromIl2Cpp]
     public static QuickAmmoSelector Create(Transform parent, LoadAmmoController loadAmmoControllerController)
     {
-        var gameObject = new GameObject(
-            nameof(QuickAmmoSelector),
-            typeof(RectTransform),
-            typeof(HorizontalLayoutGroup),
-            typeof(QuickAmmoSelector)
-        );
-        gameObject.transform.SetParent(parent);
+        // The params Type[] GameObject constructor takes IL2CPP types, add the components one by one instead
+        var gameObject = new GameObject(nameof(QuickAmmoSelector));
+        var rectTransform = gameObject.AddComponent<RectTransform>();
+        rectTransform.SetParent(parent);
 
-        var rectTransform = gameObject.GetComponent<RectTransform>();
         CommonUtils.SetUI(rectTransform, new Vector2(0, -150f));
         rectTransform.anchorMin = new Vector2(0f, 0.5f);
         rectTransform.anchorMax = new Vector2(1f, 0.5f);
 
-        var layoutGroup = gameObject.GetComponent<HorizontalLayoutGroup>();
+        var layoutGroup = gameObject.AddComponent<HorizontalLayoutGroup>();
         layoutGroup.spacing = 4f;
         layoutGroup.childControlWidth = false;
         layoutGroup.childControlHeight = false;
@@ -66,9 +74,10 @@ public class QuickAmmoSelector : InputNode
         layoutGroup.childForceExpandHeight = false;
         layoutGroup.childAlignment = TextAnchor.MiddleCenter;
 
-        var quickAmmoSelector = gameObject.GetComponent<QuickAmmoSelector>();
+        var quickAmmoSelector = gameObject.AddComponent<QuickAmmoSelector>();
+        quickAmmoSelector._emptyItemContext = new EmptyItemContext();
         quickAmmoSelector._loadAmmoControllerController = loadAmmoControllerController;
-        quickAmmoSelector._loadAmmoControllerController.OnDispose += quickAmmoSelector.Destroy;
+        quickAmmoSelector._loadAmmoControllerController.OnDispose += quickAmmoSelector.DestroySelf;
         quickAmmoSelector.CreateCancelView();
         CommonUtils.InputTree.Add(quickAmmoSelector);
         return quickAmmoSelector;
@@ -166,7 +175,7 @@ public class QuickAmmoSelector : InputNode
         return ETranslateResult.Ignore;
     }
 
-    public override void TranslateAxes(ref float[] axes)
+    public override void TranslateAxes(ref Il2CppStructArray<float> axes)
     {
     }
 
@@ -181,10 +190,11 @@ public class QuickAmmoSelector : InputNode
         {
             Close();
         }
-        _loadAmmoControllerController.OnDispose -= Destroy;
+        _loadAmmoControllerController.OnDispose -= DestroySelf;
         CommonUtils.InputTree.Remove(this);
     }
 
+    [HideFromIl2Cpp]
     private async Task OpenAmmoSelectorAsync()
     {
         if (!_loadAmmoControllerController.IsQuickLoadAvailable(out var reachableAmmo, out var foundMagazine))
@@ -205,9 +215,10 @@ public class QuickAmmoSelector : InputNode
 
     private bool ShouldRemoveFromList(Ammo ammo)
     {
-        return !_seenAmmoTplScratch.Add(ammo.TemplateId);
+        return !_seenAmmoTplScratch.Add(ammo.TemplateId.ToString());
     }
 
+    [HideFromIl2Cpp]
     [SuppressMessage("Usage", "VSTHRD003:Avoid awaiting foreign Tasks")]
     private Task<Ammo> ShowAcceptableAmmoAsync(List<Ammo> foundAmmo, InventoryController inventoryController) // method_5
     {
@@ -228,7 +239,7 @@ public class QuickAmmoSelector : InputNode
             AddAmmoView(view, ammo);
         }
         _cancelView.gameObject.SetActive(true);
-        _cancelView.transform.SetAsLastSibling();
+        _cancelView.SetAsLastSibling();
 
         _index = 0;
         HighlightIndex(_index, 0);
@@ -244,6 +255,7 @@ public class QuickAmmoSelector : InputNode
         _chosenAmmoTcs = null;
     }
 
+    [HideFromIl2Cpp]
     private Ammo GetSelectedAmmo()
     {
         return _index == _ammoItems.Count
@@ -293,6 +305,7 @@ public class QuickAmmoSelector : InputNode
         }
     }
 
+    [HideFromIl2Cpp]
     public void AddAmmoView(GridItemView view, Ammo ammo)
     {
         var layoutElement = view.gameObject.AddComponent<LayoutElement>();
@@ -323,12 +336,12 @@ public class QuickAmmoSelector : InputNode
     {
         var battleUiScreen = Singleton<CommonUI>.Instance.EftBattleUIScreen;
         _cancelView = Instantiate(battleUiScreen.AmmoSelector._cancelView, transform, false).transform;
-        _cancelView.transform.localPosition = Vector3.zero;
+        _cancelView.localPosition = Vector3.zero;
         _backgroundColor = _cancelView.Find("Image").GetComponent<Image>();
         _cancelView.gameObject.SetActive(false);
     }
 
-    private void Destroy()
+    private void DestroySelf()
     {
         Destroy(this);
     }

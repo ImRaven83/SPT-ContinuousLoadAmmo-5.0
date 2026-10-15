@@ -2,10 +2,10 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Text.Json;
 using EFT;
 using EFT.Builds;
-using Newtonsoft.Json;
-using SPT.Reflection.Utils;
+using SPTushonka.Reflection.Utils;
 
 namespace ContinuousLoadAmmo.Utils;
 
@@ -26,7 +26,8 @@ public static class ProfileMagazinePresetStore
         if (!caliberLastPreset.TryGetValue(caliber, out var presetId)) return null;
 
         var magBuildsStorage = ClientAppUtils.GetClientApp().Session.MagBuildsStorage;
-        return magBuildsStorage?.TryFindPresetById(presetId, out var preset) == true ? preset : null;
+        MagPreset preset = null;
+        return magBuildsStorage?.TryFindPresetById(new MongoID(presetId), out preset) == true ? preset : null;
     }
 
     public static void UpdateMagPreset(MagPreset preset)
@@ -38,12 +39,13 @@ public static class ProfileMagazinePresetStore
         }
 
         var caliber = preset.GetCaliberReally();
-        if (caliberLastPreset.TryGetValue(caliber, out var prevPresetId) && prevPresetId == preset.Id)
+        var presetId = preset.Id.ToString();
+        if (caliberLastPreset.TryGetValue(caliber, out var prevPresetId) && prevPresetId == presetId)
         {
             return;
         }
 
-        caliberLastPreset[caliber] = preset.Id;
+        caliberLastPreset[caliber] = presetId;
         SaveProfileLastPresets();
     }
 
@@ -58,7 +60,7 @@ public static class ProfileMagazinePresetStore
         {
             var json = File.ReadAllText(_pathToStoreFile);
 
-            _profileLastMagPresets = JsonConvert.DeserializeObject<ProfileLastMagPresets>(json);
+            _profileLastMagPresets = JsonSerializer.Deserialize<ProfileLastMagPresets>(json) ?? [];
         }
         catch (Exception ex)
         {
@@ -70,7 +72,7 @@ public static class ProfileMagazinePresetStore
     {
         try
         {
-            var json = JsonConvert.SerializeObject(_profileLastMagPresets);
+            var json = JsonSerializer.Serialize(_profileLastMagPresets);
             File.WriteAllText(_pathToStoreFile, json);
         }
         catch (Exception ex)
@@ -88,4 +90,4 @@ public class ProfileLastMagPresets : Dictionary<string, CaliberLastPreset>;
 /// <summary>
 /// Key: Caliber, Value: Mag Preset ID
 /// </summary>
-public class CaliberLastPreset : Dictionary<string, MongoID>;
+public class CaliberLastPreset : Dictionary<string, string>;

@@ -208,7 +208,7 @@ public class MagazinePresetLoader : IDisposable
     {
         foreach (var ammoItem in ammo)
         {
-            if (ammoItem.TemplateId != templateId || ammoItem.StackObjectsCount < count) continue;
+            if (!ammoItem.TemplateId.IsSameId(templateId) || ammoItem.StackObjectsCount < count) continue;
 
             return ammoItem;
         }

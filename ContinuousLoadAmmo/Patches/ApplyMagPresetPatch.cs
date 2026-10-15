@@ -1,14 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
-using System.Threading.Tasks;
 using ContinuousLoadAmmo.Utils;
 using Diz.LanguageExtensions;
 using EFT.Builds;
 using EFT.InventoryLogic;
 using EFT.UI;
-using SPT.Reflection.Patching;
+using SPTushonka.Reflection.Il2Cpp;
+using SPTushonka.Reflection.Patching;
 
 namespace ContinuousLoadAmmo.Patches;
 
@@ -25,19 +24,20 @@ public class ApplyMagPresetPatch : ModulePatch
     protected static bool Prefix(
         ItemUiContext __instance,
         MagPreset preset,
-        IReadOnlyCollection<Magazine> magazines,
-        ref Task<Option> __result
+        Il2CppSystem.Collections.Generic.IReadOnlyCollection<Magazine> magazines,
+        ref Il2CppSystem.Threading.Tasks.Task<Option> __result
     )
     {
         ProfileMagazinePresetStore.UpdateMagPreset(preset);
 
         if (!CommonUtils.InRaid) return true;
 
-        __result = Task.FromResult(default(Option)); // Task only used by mag presets window, which we disable in-raid
-        OnApplyMagPreset?.Invoke(
-            preset,
-            magazines as List<Magazine> ?? [.. magazines] /* Safeguard, all calls are lists */
-        );
+        // Task only used by mag presets window, which we disable in-raid
+        __result = Il2CppSystem.Threading.Tasks.Task.FromResult(new Option());
+
+        // Interop interfaces do not inherit each other, cast to IEnumerable to iterate
+        var magazineList = magazines.Cast<Il2CppSystem.Collections.Generic.IEnumerable<Magazine>>().ToManagedList();
+        OnApplyMagPreset?.Invoke(preset, magazineList);
         return false;
     }
 }

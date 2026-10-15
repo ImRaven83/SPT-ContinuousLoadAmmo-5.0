@@ -1,19 +1,23 @@
 ﻿using BepInEx;
 using BepInEx.Configuration;
+using BepInEx.Unity.IL2CPP;
+using BepInEx.Unity.IL2CPP.Configuration;
 using Comfort.Common;
 using ContinuousLoadAmmo.Models;
 using ContinuousLoadAmmo.Patches;
 using ContinuousLoadAmmo.Utils;
 using EFT;
-using SPT.Reflection.Patching;
+using SPTushonka.Reflection.Il2Cpp;
+using SPTushonka.Reflection.Patching;
 using UnityEngine;
 
 namespace ContinuousLoadAmmo;
 
-[BepInPlugin("com.ozen.continuousloadammo", "Continuous Load Ammo", "1.2.0")]
+[BepInPlugin("com.ozen.continuousloadammo", "Continuous Load Ammo", "2.0.0")]
+[BepInDependency("com.sptushonka.core")]
 [BepInDependency("com.tyfon.uifixes", BepInDependency.DependencyFlags.SoftDependency)]
 [BepInDependency("com.fika.core", BepInDependency.DependencyFlags.SoftDependency)]
-public class ContinuousLoadAmmo : BaseUnityPlugin
+public class ContinuousLoadAmmo : BasePlugin
 {
     private PatchManager _patchManager;
 
@@ -25,9 +29,12 @@ public class ContinuousLoadAmmo : BaseUnityPlugin
     public static ConfigEntry<QuickLoadMode> QuickLoadMode { get; private set; }
     public static ConfigEntry<KeyboardShortcut> QuickLoadHotkey { get; private set; }
 
-    public void Awake()
+    public override void Load()
     {
-        L.SetLogger(Logger);
+        L.SetLogger(Log);
+
+        // QuickAmmoSelector derives from an IL2CPP type and has to be registered before it can be added as a component
+        Il2CppInjection.RegisterAll(typeof(ContinuousLoadAmmo).Assembly, Log);
 
         SpeedLimit = Config.Bind(
             "General",
@@ -110,13 +117,13 @@ public class ContinuousLoadAmmo : BaseUnityPlugin
 #if DEBUG
         if (Singleton<GameWorld>.Instance is { MainPlayer: { } player } gameWorld)
         {
-            RegisterPlayerPatch.Postfix(gameWorld, player);
+            RegisterPlayerPatch.Postfix(gameWorld, player.Cast<IPlayer>());
         }
 #endif
     }
 
 #if DEBUG
-    public void OnDestroy()
+    public override bool Unload()
     {
         _patchManager.DisablePatches();
         LoadingEndPatches.Disable();
@@ -127,6 +134,7 @@ public class ContinuousLoadAmmo : BaseUnityPlugin
         }
 
         RegisterPlayerPatch.DisposeLoadAmmoController();
+        return true;
     }
 #endif
 }

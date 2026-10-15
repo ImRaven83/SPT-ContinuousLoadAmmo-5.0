@@ -4,7 +4,7 @@ using EFT;
 using EFT.InventoryLogic;
 using EFT.UI;
 using EFT.UI.Map;
-using SPT.Reflection.Patching;
+using SPTushonka.Reflection.Patching;
 
 namespace ContinuousLoadAmmo.Patches;
 
@@ -92,13 +92,17 @@ public static class ScreensPatches
     {
         protected override MethodBase GetTargetMethod()
         {
-            return typeof(InventoryPlayerModelWithStatsWindow).GetMethod(
-                nameof(InventoryPlayerModelWithStatsWindow.Show),
-                [
-                    typeof(IProfileDataContainer), typeof(int), typeof(EMemberCategory), typeof(ProfileStats), typeof(PlayerVisualRepresentation),
-                    typeof(InventoryController), typeof(bool),
-                ]
-            );
+            // The parameter list changes between client versions, pick the overload showing a player visual
+            foreach (var method in typeof(InventoryPlayerModelWithStatsWindow).GetMethods())
+            {
+                if (method.Name != nameof(InventoryPlayerModelWithStatsWindow.Show)) continue;
+
+                foreach (var parameter in method.GetParameters())
+                {
+                    if (parameter.ParameterType == typeof(PlayerVisualRepresentation)) return method;
+                }
+            }
+            return null;
         }
 
         [PatchPrefix]
