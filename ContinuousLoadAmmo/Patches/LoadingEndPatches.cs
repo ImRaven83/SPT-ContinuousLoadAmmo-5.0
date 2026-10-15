@@ -8,7 +8,6 @@ using EFT.InventoryLogic;
 using HarmonyLib;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
-using JetBrains.Annotations;
 using SPTushonka.Reflection.Il2Cpp;
 
 #pragma warning disable VSTHRD003
@@ -42,7 +41,6 @@ public class LoadingEndPatches
     /// Interop interfaces are generated as classes, so managed interface maps are empty.
     /// Implementers are found through the IL2CPP type system instead, then the interop method is matched by name
     /// </remarks>
-    [UsedImplicitly]
     private static List<MethodBase> TargetMethods()
     {
         var methods = new List<MethodBase>();
@@ -90,7 +88,6 @@ public class LoadingEndPatches
         return methods;
     }
 
-    [UsedImplicitly]
     public static void Postfix(Il2CppSystem.Threading.Tasks.Task<IResult> __result)
     {
         if (__result is null) return;

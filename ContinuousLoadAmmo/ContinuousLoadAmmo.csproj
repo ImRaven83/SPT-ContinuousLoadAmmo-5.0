@@ -68,6 +68,18 @@
       <HintPath>$(Interop)CommonExtensions.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="BitPacking">
+      <HintPath>$(Interop)BitPacking.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Diz.Binding">
+      <HintPath>$(Interop)Diz.Binding.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Diz.Jobs">
+      <HintPath>$(Interop)Diz.Jobs.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Comfort">
       <HintPath>$(Interop)Comfort.dll</HintPath>
       <Private>false</Private>

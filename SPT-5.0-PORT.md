@@ -21,11 +21,15 @@ SPT 5.0 (Single Player Tushonka) runs EFT 1.1 under **IL2CPP** with **BepInEx 6*
 - **Last-preset store**: moved from EFT's Newtonsoft (now an IL2CPP assembly) to `System.Text.Json`. The file format is unchanged: preset IDs are stored as strings.
 - **UI Fixes interop**: uses `IL2CPPChainloader` and requires UI Fixes **7.0.0+** (its SPT 5.0 line). It reads `_totalTask` by reflection, so it works whether UI Fixes ends up using a managed or an IL2CPP completion source.
 
-## Verify against the 1.1 interop assemblies
+## Verified against the 1.1 interop assemblies
 
-This was ported without access to an EFT 1.1 install, so nothing here has been compiled against the game. Expect a round of compile fixes for member names and signatures that changed between the 4.x client and 1.1, most likely in these places:
+The plugin **compiles cleanly against the EFT 1.1 interop assemblies**. Every patch target was checked against the interop metadata: the method exists and the Harmony parameter names match.
 
-- `GridItemView.Create(...)` and `subInteractionsWrapper.SetSubInteractions(...)`. Under interop, interface-typed parameters need an explicit `.Cast<IInterface>()`.
-- `NotificationManager.DisplayMessageNotification` signature. The call follows Fika's 5.0 branch.
-- Remapped type names this mod uses (`Magazine`, `Ammo`, `ContainerCollection`, `MagPreset`, `InventoryEquipment`, ...), because 1.1 names come from IL2CPP metadata, not SPT's remapper.
-- Whether interop events are exposed as `add_`/`remove_` methods (assumed) or as C# events.
+- `PlayerModelPatch`: the `InventoryPlayerModelWithStatsWindow.Show` parameter list changed in 1.1. The patch now selects the overload that takes a `PlayerVisualRepresentation`.
+- `JetBrains.Annotations` is an IL2CPP assembly in 1.1, so the `[UsedImplicitly]` attributes were removed.
+- Added references to `BitPacking`, `Diz.Binding` and `Diz.Jobs`. Their types appear in signatures the plugin uses.
+
+## Still to test in-game
+
+- The `QuickAmmoSelector` IL2CPP injection, including its `InputNode` overrides.
+- The UI Fixes interop, once UI Fixes 7 ships.
