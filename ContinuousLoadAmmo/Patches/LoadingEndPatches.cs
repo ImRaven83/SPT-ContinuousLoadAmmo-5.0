@@ -6,7 +6,6 @@ using Comfort.Common;
 using ContinuousLoadAmmo.Utils;
 using EFT.InventoryLogic;
 using HarmonyLib;
-using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
 using SPTushonka.Reflection.Il2Cpp;
 
@@ -38,34 +37,25 @@ public class LoadingEndPatches
     /// Get all methods implementing <see cref="IMagazineLoadingProcess.Start"/> and patch those
     /// </summary>
     /// <remarks>
-    /// Interop interfaces are generated as classes, so managed interface maps are empty.
-    /// Implementers are found through the IL2CPP type system instead, then the interop method is matched by name
+    /// Interop interfaces are generated as classes, so managed interface maps are empty. Implementers are found by
+    /// the interface method's signature instead, using plain reflection only. Never resolve the IL2CPP type here
+    /// (Il2CppType.From and friends): that runs the interop static constructor, which calls il2cpp_runtime_class_init
+    /// and runs the game's static constructors at plugin load, before backend globals exist. A type initializer that
+    /// fails then stays broken (RepairController did, which stalled the game before the main menu)
     /// </remarks>
     private static List<MethodBase> TargetMethods()
     {
         var methods = new List<MethodBase>();
 
-        var interfaceType = Il2CppType.Of<IMagazineLoadingProcess>();
+        var startMethod = typeof(IMagazineLoadingProcess).GetMethod(nameof(IMagazineLoadingProcess.Start));
+        var returnType = startMethod!.ReturnType;
         var gameAssembly = typeof(IMagazineLoadingProcess).Assembly;
 
         foreach (var type in AccessTools.GetTypesFromAssembly(gameAssembly))
         {
-            if (type.IsAbstract || type.ContainsGenericParameters || !typeof(Il2CppObjectBase).IsAssignableFrom(type))
+            if (type.IsAbstract || type.IsInterface || type.ContainsGenericParameters
+                || !typeof(Il2CppObjectBase).IsAssignableFrom(type))
             {
-                continue;
-            }
-
-            try
-            {
-                var il2CppType = type.ToIl2Cpp();
-                if (il2CppType is null || il2CppType.IsInterface || il2CppType.IsAbstract || !interfaceType.IsAssignableFrom(il2CppType))
-                {
-                    continue;
-                }
-            }
-            catch
-            {
-                // Not every interop type maps back to an IL2CPP class
                 continue;
             }
 
@@ -74,7 +64,7 @@ public class LoadingEndPatches
                 // Implicit implementations are named Start, explicit ones keep the interface name as a prefix
                 var isStart = method.Name == nameof(IMagazineLoadingProcess.Start)
                               || method.Name.EndsWith($"{nameof(IMagazineLoadingProcess)}_{nameof(IMagazineLoadingProcess.Start)}", StringComparison.Ordinal);
-                if (isStart && method.GetParameters().Length == 0)
+                if (isStart && method.ReturnType == returnType && method.GetParameters().Length == 0)
                 {
                     methods.Add(method);
                 }
