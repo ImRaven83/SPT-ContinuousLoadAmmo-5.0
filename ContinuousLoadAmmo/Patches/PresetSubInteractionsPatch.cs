@@ -2,7 +2,7 @@
 using ContinuousLoadAmmo.Utils;
 using EFT.InventoryLogic;
 using EFT.UI;
-using SPT.Reflection.Patching;
+using SPTushonka.Reflection.Patching;
 
 namespace ContinuousLoadAmmo.Patches;
 

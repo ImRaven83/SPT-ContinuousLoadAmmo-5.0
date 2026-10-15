@@ -4,7 +4,7 @@ using EFT;
 using EFT.InventoryLogic;
 using EFT.UI;
 using EFT.UI.Map;
-using SPT.Reflection.Patching;
+using SPTushonka.Reflection.Patching;
 
 namespace ContinuousLoadAmmo.Patches;
 

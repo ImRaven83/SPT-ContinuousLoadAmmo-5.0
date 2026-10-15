@@ -6,7 +6,10 @@ using Comfort.Common;
 using ContinuousLoadAmmo.Utils;
 using EFT.InventoryLogic;
 using HarmonyLib;
+using Il2CppInterop.Runtime;
+using Il2CppInterop.Runtime.InteropTypes;
 using JetBrains.Annotations;
+using SPTushonka.Reflection.Il2Cpp;
 
 #pragma warning disable VSTHRD003
 
@@ -35,32 +38,47 @@ public class LoadingEndPatches
     /// <summary>
     /// Get all methods implementing <see cref="IMagazineLoadingProcess.Start"/> and patch those
     /// </summary>
+    /// <remarks>
+    /// Interop interfaces are generated as classes, so managed interface maps are empty.
+    /// Implementers are found through the IL2CPP type system instead, then the interop method is matched by name
+    /// </remarks>
     [UsedImplicitly]
     private static List<MethodBase> TargetMethods()
     {
         var methods = new List<MethodBase>();
 
-        var interfaceType = typeof(IMagazineLoadingProcess);
-        var interfaceStartMethod = interfaceType.GetMethod(nameof(IMagazineLoadingProcess.Start));
+        var interfaceType = Il2CppType.Of<IMagazineLoadingProcess>();
+        var gameAssembly = typeof(IMagazineLoadingProcess).Assembly;
 
-        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        foreach (var type in AccessTools.GetTypesFromAssembly(gameAssembly))
         {
-            foreach (var type in assembly.GetTypes())
+            if (type.IsAbstract || type.ContainsGenericParameters || !typeof(Il2CppObjectBase).IsAssignableFrom(type))
             {
-                if (type.IsInterface || type.IsAbstract)
-                {
-                    continue;
-                }
-                if (!interfaceType.IsAssignableFrom(type))
-                {
-                    continue;
-                }
+                continue;
+            }
 
-                var interfaceMap = type.GetInterfaceMap(interfaceType);
-                var startMethodIndex = Array.IndexOf(interfaceMap.InterfaceMethods, interfaceStartMethod);
-                if (startMethodIndex != -1)
+            try
+            {
+                var il2CppType = type.ToIl2Cpp();
+                if (il2CppType is null || il2CppType.IsInterface || il2CppType.IsAbstract || !interfaceType.IsAssignableFrom(il2CppType))
                 {
-                    methods.Add(interfaceMap.TargetMethods[startMethodIndex]);
+                    continue;
+                }
+            }
+            catch
+            {
+                // Not every interop type maps back to an IL2CPP class
+                continue;
+            }
+
+            foreach (var method in type.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+            {
+                // Implicit implementations are named Start, explicit ones keep the interface name as a prefix
+                var isStart = method.Name == nameof(IMagazineLoadingProcess.Start)
+                              || method.Name.EndsWith($"{nameof(IMagazineLoadingProcess)}_{nameof(IMagazineLoadingProcess.Start)}", StringComparison.Ordinal);
+                if (isStart && method.GetParameters().Length == 0)
+                {
+                    methods.Add(method);
                 }
             }
         }
@@ -73,14 +91,18 @@ public class LoadingEndPatches
     }
 
     [UsedImplicitly]
-    public static void Postfix(Task<IResult> __result)
+    public static void Postfix(Il2CppSystem.Threading.Tasks.Task<IResult> __result)
     {
-        _ = WaitForEndAsync(__result);
+        if (__result is null) return;
+
+        _ = WaitForEndAsync(__result.AsManaged());
     }
 
-    private static async Task WaitForEndAsync(Task<IResult> __result)
+    private static async Task WaitForEndAsync(Task<IResult> result)
     {
-        await __result;
+        await result;
+
+        // Resumed on the main thread by the SPTushonka dispatcher, safe to touch game objects
         OnLoadingEnd?.Invoke();
     }
 }

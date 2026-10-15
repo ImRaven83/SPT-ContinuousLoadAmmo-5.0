@@ -8,6 +8,8 @@ using ContinuousLoadAmmo.Utils;
 using EFT;
 using EFT.Communications;
 using EFT.InventoryLogic;
+using Il2CppInterop.Runtime;
+using SPTushonka.Reflection.Il2Cpp;
 using UnityEngine;
 using static EFT.Player;
 
@@ -19,6 +21,11 @@ public class LoadAmmoController : IDisposable
     private readonly MagazinePresetLoader _magazinePresetLoader;
     private Magazine _magazine;
     private bool _isReachable = true;
+
+    // IL2CPP events take IL2CPP delegates. Keep the converted instances, a fresh conversion would not unsubscribe
+    private readonly Il2CppSystem.Action<ItemEventArgs> _activeEventAddedHandler;
+    private readonly Il2CppSystem.Action<AbstractHandsController, AbstractHandsController> _handsControllerChangedHandler;
+    private readonly Il2CppSystem.Action<IPlayer> _deadOrUnspawnHandler;
 
     public event Action<float, int, int> OnStartLoading;
     public event Action<Item> OnCloseInventoryLoading;
@@ -33,7 +40,8 @@ public class LoadAmmoController : IDisposable
     public LoadAmmoController(Player player)
     {
         _player = player;
-        if (_player.InventoryController is not PlayerInventoryController playerInvCont)
+        var playerInvCont = _player.InventoryController?.TryCast<PlayerInventoryController>();
+        if (playerInvCont is null)
         {
             throw new InvalidOperationException("Player.InventoryController is not Player.PlayerInventoryController");
         }
@@ -41,12 +49,17 @@ public class LoadAmmoController : IDisposable
         PlayerInventoryController = playerInvCont;
         PlayerInventoryController.SetNextProcessLocked(false);
 
-        PlayerInventoryController.ActiveEventAdded += LoadingStart;
+        _activeEventAddedHandler = DelegateSupport.ConvertDelegate<Il2CppSystem.Action<ItemEventArgs>>(LoadingStart);
+        _handsControllerChangedHandler =
+            DelegateSupport.ConvertDelegate<Il2CppSystem.Action<AbstractHandsController, AbstractHandsController>>(StopLoadingOnHandsChange);
+        _deadOrUnspawnHandler = DelegateSupport.ConvertDelegate<Il2CppSystem.Action<IPlayer>>(OnDestroyPlayer);
+
+        PlayerInventoryController.add_ActiveEventAdded(_activeEventAddedHandler);
         LoadingEndPatches.OnLoadingEnd += LoadingEnd;
         InventoryScreenClosePatch.OnInventoryClose += LoadingOutsideInventory; // Sucks to have to use this workaround
         // _player.OnInventoryOpened += LoadingOutsideInventory; // Why does BSG CALL THIS _TWICE_
-        _player.OnHandsControllerChanged += StopLoadingOnHandsChange;
-        _player.OnIPlayerDeadOrUnspawn += OnDestroyPlayer;
+        _player.add_OnHandsControllerChanged(_handsControllerChangedHandler);
+        _player.add_OnIPlayerDeadOrUnspawn(_deadOrUnspawnHandler);
 
         _magazinePresetLoader = new MagazinePresetLoader(this);
     }
@@ -78,8 +91,8 @@ public class LoadAmmoController : IDisposable
             {
                 foreach (var currAmmo in reachableAmmo)
                 {
-                    if (currentMagazine.FirstRealAmmo() is not Ammo ammoInsideMag
-                        || ammoInsideMag.TemplateId != currAmmo.TemplateId)
+                    var ammoInsideMag = currentMagazine.FirstRealAmmo()?.TryCast<Ammo>();
+                    if (ammoInsideMag is null || !ammoInsideMag.TemplateId.IsSameId(currAmmo.TemplateId))
                     {
                         continue;
                     }
@@ -123,7 +136,7 @@ public class LoadAmmoController : IDisposable
             token.ThrowIfCancellationRequested();
             await Task.Yield();
         }
-        await PlayerInventoryController.LoadMagazine(ammo, magazine, loadCount, false);
+        await PlayerInventoryController.LoadMagazine(ammo, magazine, loadCount, false).AsManaged();
     }
 
     private readonly List<Magazine> _reachableMagazinesScratch = [];
@@ -139,7 +152,7 @@ public class LoadAmmoController : IDisposable
         if (ContinuousLoadAmmo.ReachableOnly.Value)
         {
             // Only get top level container's items for quick load, non-recursive
-            PlayerInventoryController.GetAcceptableItemsNonAlloc(
+            PlayerInventoryController.Inventory.Equipment.GetTopLevelItemsNonAlloc(
                 ReachableSlots,
                 _reachableMagazinesScratch,
                 (mag) => PlayerInventoryController.Examined(mag) && mag.Count != mag.MaxCount && mag.CheckCompatibility(ammo),
@@ -188,7 +201,7 @@ public class LoadAmmoController : IDisposable
         if (ContinuousLoadAmmo.ReachableOnly.Value)
         {
             // Only get top level container's items for quick load, non-recursive
-            PlayerInventoryController.GetAcceptableItemsNonAlloc(
+            PlayerInventoryController.Inventory.Equipment.GetTopLevelItemsNonAlloc(
                 ReachableSlots,
                 reachableAmmo,
                 (ammo) => PlayerInventoryController.Examined(ammo) && ammo.Caliber == ammoCaliber,
@@ -280,7 +293,7 @@ public class LoadAmmoController : IDisposable
     public string GetCurrentWeaponCaliber()
     {
         // The current is the last equipped
-        if (_player.LastEquippedWeaponOrKnifeItem is Weapon weapon)
+        if (_player.LastEquippedWeaponOrKnifeItem?.TryCast<Weapon>() is { } weapon)
         {
             return weapon.GetWeaponCaliber();
         }
@@ -294,14 +307,14 @@ public class LoadAmmoController : IDisposable
         if (PlayerInventoryController is not null)
         {
             PlayerInventoryController.StopProcesses();
-            PlayerInventoryController.ActiveEventAdded -= LoadingStart;
+            PlayerInventoryController.remove_ActiveEventAdded(_activeEventAddedHandler);
         }
         if (_player != null)
         {
             LoadingEndPatches.OnLoadingEnd -= LoadingEnd;
             InventoryScreenClosePatch.OnInventoryClose -= LoadingOutsideInventory;
-            _player.OnHandsControllerChanged -= StopLoadingOnHandsChange;
-            _player.OnIPlayerDeadOrUnspawn -= OnDestroyPlayer;
+            _player.remove_OnHandsControllerChanged(_handsControllerChangedHandler);
+            _player.remove_OnIPlayerDeadOrUnspawn(_deadOrUnspawnHandler);
         }
         OnDispose?.Invoke();
         OnStartLoading = null;
@@ -312,25 +325,29 @@ public class LoadAmmoController : IDisposable
 
     private void LoadingStart(ItemEventArgs eventArgs)
     {
-        switch (eventArgs)
+        // Pattern matching does not see the runtime IL2CPP type, cast explicitly
+        if (eventArgs.TryCast<LoadMagazineEventArgs>() is { } loadEvent)
         {
-            case LoadMagazineEventArgs loadEvent:
-                if (loadEvent.TargetItem is not Magazine loadMagazine || loadEvent.Item is not Ammo ammo)
-                {
-                    return;
-                }
-
-                _magazine = loadMagazine;
-                _isReachable = IsAtReachablePlace(_magazine, ammo);
-                OnStartLoading?.Invoke(loadEvent.LoadTime, loadEvent.LoadCount, 0);
-                break;
-            case UnloadMagazineEventArgs unloadEvent:
-                _magazine = unloadEvent.FromItem;
-                _isReachable = IsAtReachablePlace(_magazine);
-                OnStartLoading?.Invoke(unloadEvent.UnloadTime, unloadEvent.UnloadCount, unloadEvent.StartCount);
-                break;
-            default:
+            var loadMagazine = loadEvent.TargetItem?.TryCast<Magazine>();
+            var ammo = loadEvent.Item?.TryCast<Ammo>();
+            if (loadMagazine is null || ammo is null)
+            {
                 return;
+            }
+
+            _magazine = loadMagazine;
+            _isReachable = IsAtReachablePlace(_magazine, ammo);
+            OnStartLoading?.Invoke(loadEvent.LoadTime, loadEvent.LoadCount, 0);
+        }
+        else if (eventArgs.TryCast<UnloadMagazineEventArgs>() is { } unloadEvent)
+        {
+            _magazine = unloadEvent.FromItem;
+            _isReachable = IsAtReachablePlace(_magazine);
+            OnStartLoading?.Invoke(unloadEvent.UnloadTime, unloadEvent.UnloadCount, unloadEvent.StartCount);
+        }
+        else
+        {
+            return;
         }
 
         // Started loading from outside the inventory
@@ -407,7 +424,7 @@ public class LoadAmmoController : IDisposable
 
         _reachablePlaceItemScratch.Clear();
         GetReachableItems(_reachablePlaceItemScratch);
-        return _reachablePlaceItemScratch.Contains(item) && PlayerInventoryController.Examined(item);
+        return _reachablePlaceItemScratch.ContainsObject(item) && PlayerInventoryController.Examined(item);
     }
 
     /// <summary>
@@ -419,9 +436,9 @@ public class LoadAmmoController : IDisposable
 
         _reachablePlaceItemScratch.Clear();
         GetReachableItems(_reachablePlaceItemScratch);
-        return _reachablePlaceItemScratch.Contains(item)
+        return _reachablePlaceItemScratch.ContainsObject(item)
                && PlayerInventoryController.Examined(item)
-               && _reachablePlaceItemScratch.Contains(item2)
+               && _reachablePlaceItemScratch.ContainsObject(item2)
                && PlayerInventoryController.Examined(item2);
     }
 
@@ -440,16 +457,17 @@ public class LoadAmmoController : IDisposable
     /// </summary>
     private bool ContainerPredicate(ContainerCollection container)
     {
-        return container is not IAmmoContainer
-               && (container is not SearchableItem searchable
-                   || PlayerInventoryController.SearchController.IsSearched(searchable));
+        if (container.TryCast<IAmmoContainer>() is not null) return false;
+
+        var searchable = container.TryCast<SearchableItem>();
+        return searchable is null || PlayerInventoryController.SearchController.IsSearched(searchable);
     }
 
     private void StopLoadingOnHandsChange(AbstractHandsController oldHands, AbstractHandsController newHands)
     {
         if (!IsActive) return;
 
-        if (newHands is not (null or EmptyHandsController))
+        if (newHands is not null && newHands.TryCast<EmptyHandsController>() is null)
         {
             StopLoading();
         }

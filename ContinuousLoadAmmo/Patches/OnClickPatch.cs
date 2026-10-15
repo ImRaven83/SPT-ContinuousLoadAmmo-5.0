@@ -2,7 +2,7 @@
 using System.Reflection;
 using ContinuousLoadAmmo.Utils;
 using EFT.UI.DragAndDrop;
-using SPT.Reflection.Patching;
+using SPTushonka.Reflection.Patching;
 using UnityEngine;
 using UnityEngine.EventSystems;
 

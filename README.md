@@ -18,7 +18,7 @@ ___
 - When using quick load, reachable places include _**only**_ magazines and ammo inside vests, pockets, and secure containers, _**NOT**_ including nested containers
 
 ### Installation
-Extract the contents of the .zip archive into your SPT directory.
+Requires SPT 5.0. Extract the contents of the .zip archive into your SPT directory.
 <details>
   <summary>Demonstration</summary>
 

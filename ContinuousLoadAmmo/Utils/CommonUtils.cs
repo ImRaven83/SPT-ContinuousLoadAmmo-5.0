@@ -7,6 +7,7 @@ using EFT.Communications;
 using EFT.InputSystem;
 using EFT.InventoryLogic;
 using EFT.UI;
+using Il2CppInterop.Runtime.InteropTypes;
 using UnityEngine;
 
 #pragma warning disable CS0618 // Type or member is obsolete
@@ -53,7 +54,8 @@ public static class CommonUtils
     {
         foreach (var cartridge in magazine.Cartridges._items)
         {
-            if (cartridge is not Ammo cartridgeAmmo) continue;
+            var cartridgeAmmo = cartridge?.TryCast<Ammo>();
+            if (cartridgeAmmo is null) continue;
 
             if (cartridgeAmmo.Caliber != ammoToLoad.Caliber) return true;
         }
@@ -73,8 +75,32 @@ public static class CommonUtils
     {
         foreach (var equipmentSlot in equipmentSlots)
         {
-            if (inventoryEquipment.GetSlot(equipmentSlot).ContainedItem is not ContainerCollection parentContainer
-                || (goDeeperPredicate is not null && !goDeeperPredicate(parentContainer)))
+            var parentContainer = inventoryEquipment.GetSlot(equipmentSlot).ContainedItem?.TryCast<ContainerCollection>();
+            if (parentContainer is null || (goDeeperPredicate is not null && !goDeeperPredicate(parentContainer)))
+            {
+                continue;
+            }
+
+            parentContainer.CollectItems(preAllocatedList, predicate, goDeeperPredicate);
+        }
+    }
+
+    /// <summary>
+    /// Get acceptable items of the top level containers only, non-recursive.
+    /// Managed replacement for InventoryController.GetAcceptableItemsNonAlloc, which takes IL2CPP collections in 5.0
+    /// </summary>
+    public static void GetTopLevelItemsNonAlloc<TItem>(
+        this InventoryEquipment inventoryEquipment,
+        EquipmentSlot[] equipmentSlots,
+        List<TItem> preAllocatedList,
+        Predicate<TItem> predicate = null,
+        Predicate<ContainerCollection> containerPredicate = null
+    ) where TItem : Item
+    {
+        foreach (var equipmentSlot in equipmentSlots)
+        {
+            var parentContainer = inventoryEquipment.GetSlot(equipmentSlot).ContainedItem?.TryCast<ContainerCollection>();
+            if (parentContainer is null || (containerPredicate is not null && !containerPredicate(parentContainer)))
             {
                 continue;
             }
@@ -83,11 +109,8 @@ public static class CommonUtils
             {
                 foreach (var item in container.Items)
                 {
-                    if (item is ContainerCollection childContainer && (goDeeperPredicate is null || goDeeperPredicate(childContainer)))
-                    {
-                        childContainer.GetAllItemsOfContainer(preAllocatedList, predicate, goDeeperPredicate);
-                    }
-                    if (item is TItem genericItem && (predicate is null || predicate(genericItem)))
+                    var genericItem = item.TryCast<TItem>();
+                    if (genericItem is not null && (predicate is null || predicate(genericItem)))
                     {
                         preAllocatedList.Add(genericItem);
                     }
@@ -103,15 +126,29 @@ public static class CommonUtils
         Predicate<ContainerCollection> goDeeperPredicate = null
     ) where TItem : Item
     {
+        parentContainer.CollectItems(preAllocatedList, predicate, goDeeperPredicate);
+    }
+
+    private static void CollectItems<TItem>(
+        this ContainerCollection parentContainer,
+        List<TItem> preAllocatedList,
+        Predicate<TItem> predicate,
+        Predicate<ContainerCollection> goDeeperPredicate
+    ) where TItem : Item
+    {
         foreach (var container in parentContainer.Containers)
         {
             foreach (var item in container.Items)
             {
-                if (item is ContainerCollection childContainer && (goDeeperPredicate is null || goDeeperPredicate(childContainer)))
+                // IL2CPP hands back wrappers typed as the declared type, so type checks have to go through TryCast
+                var childContainer = item.TryCast<ContainerCollection>();
+                if (childContainer is not null && (goDeeperPredicate is null || goDeeperPredicate(childContainer)))
                 {
-                    childContainer.GetAllItemsOfContainer(preAllocatedList, predicate, goDeeperPredicate);
+                    childContainer.CollectItems(preAllocatedList, predicate, goDeeperPredicate);
                 }
-                if (item is TItem genericItem && (predicate is null || predicate(genericItem)))
+
+                var genericItem = item.TryCast<TItem>();
+                if (genericItem is not null && (predicate is null || predicate(genericItem)))
                 {
                     preAllocatedList.Add(genericItem);
                 }
@@ -123,7 +160,7 @@ public static class CommonUtils
     {
         foreach (var eventArgs in itemController.ActiveEvents)
         {
-            if (eventArgs is IItemInHandsEventArgs and not RemoveFromHandsEventArgs)
+            if (eventArgs.TryCast<IItemInHandsEventArgs>() is not null && eventArgs.TryCast<RemoveFromHandsEventArgs>() is null)
             {
                 // RemoveFromHandsEventArgs - not considered as busy hands, for successive unloading of different bullets
                 return true;
@@ -141,7 +178,7 @@ public static class CommonUtils
     {
         if (ContinuousLoadAmmo.QuickLoadNotify.Value || alwaysDisplay)
         {
-            NotificationManager.DisplayMessageNotification(message, duration, iconType);
+            NotificationManager.DisplayMessageNotification(message, duration, iconType, new Il2CppSystem.Nullable<Color>(), false);
         }
     }
 
@@ -164,9 +201,38 @@ public static class CommonUtils
         return preset.Caliber.Replace("Caliber", string.Empty);
     }
 
+    /// <summary>
+    /// Two wrappers can point at the same IL2CPP object, so compare the native pointers
+    /// </summary>
+    public static bool IsSameObject(this Il2CppObjectBase a, Il2CppObjectBase b)
+    {
+        if (a is null || b is null) return a is null && b is null;
+
+        return a.Pointer == b.Pointer;
+    }
+
+    public static bool ContainsObject<T>(this List<T> list, T item) where T : Il2CppObjectBase
+    {
+        foreach (var listItem in list)
+        {
+            if (listItem.IsSameObject(item)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// MongoID is a boxed struct under IL2CPP, compare by value instead of relying on operator overloads
+    /// </summary>
+    public static bool IsSameId(this MongoID a, MongoID b)
+    {
+        if (a is null || b is null) return a is null && b is null;
+
+        return a.ToString() == b.ToString();
+    }
+
     public static void SetUI(Transform transform, Vector2? offset = null, Vector3? scale = null)
     {
-        var rectTransform = (RectTransform)transform;
+        var rectTransform = transform.Cast<RectTransform>();
         rectTransform.anchoredPosition = offset ?? Vector2.zero;
         rectTransform.localScale = scale ?? Vector3.one;
         rectTransform.anchorMin = new Vector2(0.5f, 0.5f);

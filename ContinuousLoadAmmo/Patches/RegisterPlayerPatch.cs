@@ -3,7 +3,7 @@ using ContinuousLoadAmmo.Components;
 using ContinuousLoadAmmo.Controllers;
 using ContinuousLoadAmmo.Utils;
 using EFT;
-using SPT.Reflection.Patching;
+using SPTushonka.Reflection.Patching;
 
 namespace ContinuousLoadAmmo.Patches;
 
@@ -19,7 +19,7 @@ public class RegisterPlayerPatch : ModulePatch
     [PatchPostfix]
     public static void Postfix(GameWorld __instance, IPlayer iPlayer)
     {
-        if (__instance is HideoutGameWorld)
+        if (__instance.TryCast<HideoutGameWorld>() is not null)
         {
             return;
         }
@@ -28,7 +28,7 @@ public class RegisterPlayerPatch : ModulePatch
             return;
         }
 
-        if (iPlayer is Player player)
+        if (iPlayer.TryCast<Player>() is { } player)
         {
             _loadAmmoController = new LoadAmmoController(player);
             _loadAmmoController.OnDispose += OnDispose;
