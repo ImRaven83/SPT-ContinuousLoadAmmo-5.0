@@ -16,7 +16,7 @@ SPT 5.0 (Single Player Tushonka) runs EFT 1.1 under **IL2CPP** with **BepInEx 6*
   - Harmony `____field` injection is replaced by the interop property on `__instance`.
   - `new GameObject(name, typeof(...))` is replaced by `AddComponent<T>()`.
 - **`QuickAmmoSelector`** is injected into IL2CPP. It is registered via `Il2CppInjection.RegisterAll` and has an `IntPtr` constructor. Managed-only members are marked `[HideFromIl2Cpp]`, and `TranslateAxes` takes `ref Il2CppStructArray<float>`.
-- **`LoadingEndPatches`**: interop interfaces are generated as classes, so the managed interface map is empty. `IMagazineLoadingProcess` implementers are now found through IL2CPP type assignability.
+- **`LoadingEndPatches`**: interop interfaces are generated as classes, so the managed interface map is empty. `IMagazineLoadingProcess` implementers are found by the `Start()` signature using plain reflection. Never resolve IL2CPP types in bulk here (`Il2CppType.From`): each interop type's static constructor calls `il2cpp_runtime_class_init`, which runs the game's static constructors at plugin load, before backend globals exist. That poisoned `RepairController` and stalled the client before the main menu.
 - **Quick load lookup**: EFT's `InventoryController.GetAcceptableItemsNonAlloc` takes IL2CPP lists and delegates in 1.1. It is replaced by the managed, non-recursive `GetTopLevelItemsNonAlloc`.
 - **Last-preset store**: moved from EFT's Newtonsoft (now an IL2CPP assembly) to `System.Text.Json`. The file format is unchanged: preset IDs are stored as strings.
 - **UI Fixes interop**: uses `IL2CPPChainloader` and requires UI Fixes **7.0.0+** (its SPT 5.0 line). It reads `_totalTask` by reflection, so it works whether UI Fixes ends up using a managed or an IL2CPP completion source.
@@ -28,6 +28,10 @@ The plugin **compiles cleanly against the EFT 1.1 interop assemblies**. Every pa
 - `PlayerModelPatch`: the `InventoryPlayerModelWithStatsWindow.Show` parameter list changed in 1.1. The patch now selects the overload that takes a `PlayerVisualRepresentation`.
 - `JetBrains.Annotations` is an IL2CPP assembly in 1.1, so the `[UsedImplicitly]` attributes were removed.
 - Added references to `BitPacking`, `Diz.Binding` and `Diz.Jobs`. Their types appear in signatures the plugin uses.
+
+## Tested in-game
+
+Reaches the main menu and attaches to the player in raid; loading outside the inventory works.
 
 ## Still to test in-game
 
